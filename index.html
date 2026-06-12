@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BrokenLine.io — AI Telephone</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0A0C17;
+      --surface: rgba(18, 21, 38, 0.88);
+      --surface2: rgba(28, 32, 55, 0.7);
+      --surface-solid: #12152A;
+      --accent: #7C6FFF;
+      --accent2: #A99FFF;
+      --accent-glow: rgba(124,111,255,0.35);
+      --text: #F0EFFF;
+      --muted: #8B8FA8;
+      --green: #4ADE80;
+      --amber: #FBBF24;
+      --red: #F87171;
+      --border: rgba(255,255,255,0.07);
+      --border-hi: rgba(255,255,255,0.13);
+      --radius: 18px;
+      --radius-sm: 12px;
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated background ── */
+    .bg-canvas {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    }
+    .bg-blob {
+      position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.12;
+      animation: blobDrift 14s ease-in-out infinite;
+    }
+    .bg-blob:nth-child(1) {
+      width: 500px; height: 500px; background: #7C6FFF;
+      top: -150px; left: -150px; animation-duration: 16s;
+    }
+    .bg-blob:nth-child(2) {
+      width: 350px; height: 350px; background: #4ADE80;
+      bottom: -80px; right: -80px; animation-duration: 20s; animation-delay: -6s;
+    }
+    .bg-blob:nth-child(3) {
+      width: 280px; height: 280px; background: #FBBF24;
+      top: 40%; right: 15%; animation-duration: 18s; animation-delay: -10s;
+    }
+    @keyframes blobDrift {
+      0%,100% { transform: translate(0,0) scale(1); }
+      33%      { transform: translate(30px,-30px) scale(1.08); }
+      66%      { transform: translate(-20px,25px) scale(0.93); }
+    }
+
+    /* ── Grid overlay ── */
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    /* ── Mute button ── */
+    #btn-mute {
+      position: fixed; top: 16px; right: 16px; z-index: 1000;
+      width: 40px; height: 40px;
+      background: var(--surface); border: 1px solid var(--border-hi);
+      border-radius: 50%; cursor: pointer; font-size: 1.1rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      backdrop-filter: blur(12px);
+    }
+    #btn-mute:hover { background: var(--surface2); box-shadow: 0 0 12px var(--accent-glow); transform: scale(1.08); }
+
+    /* ── App layout ── */
+    #app {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 20px 16px 40px;
+    }
+
+    /* ── Screens ── */
+    .screen { display: none; width: 100%; max-width: 520px; flex-direction: column; gap: 18px; }
+    .screen.active { display: flex; animation: screenIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+    @keyframes screenIn {
+      from { opacity: 0; transform: translateY(22px) scale(0.98); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* ── Logo ── */
+    .logo {
+      font-family: 'Syne', sans-serif; font-weight: 800;
+      font-size: 2.7rem; letter-spacing: -1.5px; user-select: none;
+    }
+    .logo span { color: var(--accent); text-shadow: 0 0 30px var(--accent-glow); }
+    .tagline { color: var(--muted); font-size: 0.92rem; text-align: center; margin-top: -6px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--radius);
+      padding: 24px 22px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+      transition: box-shadow 0.2s;
+    }
+    .card:hover { box-shadow: 0 8px 40px rgba(0,0,0,0.4), 0 0 0 1px var(--border-hi), inset 0 1px 0 rgba(255,255,255,0.08); }
+    .card-title {
+      font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 700; margin-bottom: 16px;
+    }
+
+    /* ── Inputs ── */
+    input[type="text"], textarea {
+      width: 100%;
+      background: rgba(10,12,23,0.6);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px; padding: 12px 14px;
+      color: var(--text); font-family: 'Inter', sans-serif; font-size: 1rem;
+      outline: none; resize: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input[type="text"]:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124,111,255,0.18);
+    }
+    input[type="text"]::placeholder, textarea::placeholder { color: var(--muted); }
+    textarea { min-height: 108px; }
+    label {
+      display: block; font-size: 0.78rem; font-weight: 600;
+      color: var(--muted); margin-bottom: 6px;
+      text-transform: uppercase; letter-spacing: 0.07em;
+    }
+    .field { display: flex; flex-direction: column; }
+    .char-count { text-align: right; font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 13px 26px; border-radius: 100px; border: none;
+      font-family: 'Inter', sans-serif; font-size: 0.97rem; font-weight: 600;
+      cursor: pointer; text-decoration: none; position: relative; overflow: hidden;
+      transition: opacity 0.15s, box-shadow 0.25s, transform 0.12s;
+    }
+    .btn::after {
+      content: ''; position: absolute; inset: 0; border-radius: inherit;
+      background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent 60%);
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .btn:hover::after { opacity: 1; }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary {
+      background: linear-gradient(135deg, #7C6FFF 0%, #5B4FD9 100%);
+      color: #fff;
+    }
+    .btn-primary:hover { box-shadow: 0 0 28px rgba(124,111,255,0.55), 0 4px 16px rgba(0,0,0,0.3); opacity: 0.93; }
+    .btn-secondary {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border-hi);
+    }
+    .btn-secondary:hover { background: rgba(40,46,72,0.9); }
+    .btn-full { width: 100%; }
+    .btn:disabled { opacity: 0.38; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+    .btn-row { display: flex; gap: 10px; }
+
+    /* Ripple on click */
+    .btn .ripple {
+      position: absolute; border-radius: 50%;
+      background: rgba(255,255,255,0.25);
+      transform: scale(0); animation: rippleAnim 0.5s linear;
+      pointer-events: none;
+    }
+    @keyframes rippleAnim { to { transform: scale(4); opacity: 0; } }
+
+    /* ── Room code ── */
+    .room-code-wrap { text-align: center; padding: 10px 0 4px; }
+    .room-code {
+      font-family: 'Syne', sans-serif; font-size: 3.8rem; font-weight: 800;
+      letter-spacing: 14px; color: var(--accent);
+      text-shadow: 0 0 40px rgba(124,111,255,0.5), 0 0 80px rgba(124,111,255,0.2);
+      animation: codePulse 3s ease-in-out infinite;
+    }
+    @keyframes codePulse {
+      0%,100% { text-shadow: 0 0 40px rgba(124,111,255,0.5), 0 0 80px rgba(124,111,255,0.2); }
+      50%      { text-shadow: 0 0 60px rgba(124,111,255,0.7), 0 0 100px rgba(124,111,255,0.35); }
+    }
+    .room-code-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
+
+    /* ── Player list ── */
+    .player-list { display: flex; flex-direction: column; gap: 8px; }
+    .player-item {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(10,12,23,0.5); border: 1px solid var(--border);
+      border-radius: 11px; padding: 10px 14px;
+      animation: playerIn 0.35s cubic-bezier(0.22,1,0.36,1) both;
+    }
+    @keyframes playerIn {
+      from { opacity: 0; transform: translateX(-12px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .player-avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.72rem; font-weight: 700; color: #fff;
+      flex-shrink: 0; text-transform: uppercase;
+    }
+    .player-name { flex: 1; font-size: 0.95rem; }
+    .player-host-badge {
+      font-size: 0.68rem; background: rgba(124,111,255,0.2);
+      color: var(--accent2); padding: 2px 9px; border-radius: 100px;
+      border: 1px solid rgba(124,111,255,0.3);
+    }
+    .player-you-badge {
+      font-size: 0.68rem; color: var(--muted);
+    }
+
+    /* ── Timer ── */
+    .timer-wrap { position: relative; }
+    .timer-track {
+      height: 7px; background: rgba(255,255,255,0.06);
+      border-radius: 100px; overflow: hidden;
+    }
+    .timer-fill {
+      height: 100%; border-radius: 100px;
+      background: var(--accent);
+      transition: width 1s linear, background 1s;
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+    .timer-fill.pulse { animation: timerPulse 0.5s ease-in-out infinite; }
+    @keyframes timerPulse {
+      0%,100% { box-shadow: 0 0 8px rgba(248,113,113,0.5); }
+      50%      { box-shadow: 0 0 20px rgba(248,113,113,0.9); }
+    }
+    .timer-label { text-align: right; font-size: 0.8rem; color: var(--muted); margin-top: 5px; }
+
+    /* ── Spinner ── */
+    .spinner-wrap { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 36px 0; }
+    .spinner {
+      width: 56px; height: 56px;
+      border: 3px solid rgba(124,111,255,0.15);
+      border-top-color: var(--accent);
+      border-right-color: var(--accent2);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-msg { color: var(--muted); font-size: 0.92rem; text-align: center; font-style: italic; min-height: 1.4em; }
+
+    /* ── Generated image ── */
+    .gen-image { width: 100%; border-radius: 12px; display: block; background: var(--surface2); }
+
+    /* ── Waiting screen ── */
+    .dot-pulse { display: flex; gap: 5px; }
+    .dot-pulse span {
+      width: 7px; height: 7px; background: var(--accent);
+      border-radius: 50%; animation: dotPop 1.3s infinite ease-in-out;
+    }
+    .dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+    .dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotPop {
+      0%,80%,100% { transform: scale(0.55); opacity: 0.35; }
+      40%          { transform: scale(1); opacity: 1; }
+    }
+
+    /* ── Progress bar ── */
+    .prog-track { height: 5px; background: rgba(255,255,255,0.06); border-radius: 100px; overflow: hidden; }
+    .prog-fill { height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.6s ease; }
+
+    /* ── Results ── */
+    #screen-results {
+      max-height: 100vh; overflow-y: auto;
+      justify-content: flex-start; padding-top: 28px; padding-bottom: 40px;
+    }
+    .results-chain { display: flex; flex-direction: column; gap: 4px; }
+    .chain-step { opacity: 0; transform: translateY(16px); transition: opacity 0.45s ease, transform 0.45s ease; }
+    .chain-step.visible { opacity: 1; transform: translateY(0); }
+    .chain-step-inner {
+      background: var(--surface); border: 1px solid var(--border-hi);
+      border-radius: 13px; padding: 14px 16px;
+      backdrop-filter: blur(10px);
+    }
+    .chain-step-inner.sentence-step { border-left: 3px solid var(--accent); }
+    .chain-step-inner.image-step    { border-left: 3px solid var(--amber); padding: 12px; }
+    .step-meta { font-size: 0.73rem; color: var(--muted); margin-bottom: 7px; display: flex; align-items: center; gap: 7px; }
+    .step-badge { padding: 2px 9px; border-radius: 100px; font-size: 0.68rem; font-weight: 600; }
+    .badge-sentence { background: rgba(124,111,255,0.18); color: var(--accent2); border: 1px solid rgba(124,111,255,0.25); }
+    .badge-image    { background: rgba(251,191,36,0.15);  color: var(--amber);  border: 1px solid rgba(251,191,36,0.25); }
+    .chain-step-inner.image-step img { width: 100%; border-radius: 8px; display: block; }
+    .chain-connector { display: flex; justify-content: center; color: var(--muted); font-size: 1.1rem; padding: 2px 0; }
+
+    .reveal-summary {
+      background: linear-gradient(135deg, rgba(124,111,255,0.12), rgba(74,222,128,0.07));
+      border: 1px solid rgba(124,111,255,0.25); border-radius: var(--radius);
+      padding: 20px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .reveal-label { font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+    .reveal-text  { font-size: 1rem; font-weight: 500; margin-top: 3px; }
+    .reveal-arrow { font-size: 1.5rem; color: var(--accent); text-align: center; }
+
+    /* ── Confetti ── */
+    #confetti-layer { position: fixed; inset: 0; pointer-events: none; z-index: 999; overflow: hidden; }
+    .confetti-p {
+      position: absolute; border-radius: 2px;
+      animation: cFall linear forwards;
+    }
+    @keyframes cFall {
+      0%   { transform: translate(0,0) rotate(0deg); opacity: 1; }
+      100% { transform: translate(var(--dx), 110vh) rotate(var(--rot)); opacity: 0; }
+    }
+
+    /* ── Misc ── */
+    .section-title { font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; }
+    .text-center { text-align: center; }
+    .text-muted   { color: var(--muted); font-size: 0.9rem; }
+    .error-msg    { color: var(--red); font-size: 0.84rem; text-align: center; animation: shake 0.35s ease; }
+    .success-msg  { color: var(--green); font-size: 0.84rem; text-align: center; }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      25%      { transform: translateX(-6px); }
+      75%      { transform: translateX(6px); }
+    }
+    .big-emoji { font-size: 3.2rem; text-align: center; }
+    .hero { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+    /* ── Home hero features ── */
+    .feature-pills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+    .feature-pill {
+      background: var(--surface2); border: 1px solid var(--border-hi);
+      border-radius: 100px; padding: 5px 13px; font-size: 0.78rem; color: var(--muted);
+    }
+
+    @media (max-width: 400px) {
+      .room-code { font-size: 2.8rem; letter-spacing: 9px; }
+      .logo { font-size: 2.1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Animated background -->
+<div class="bg-canvas">
+  <div class="bg-blob"></div>
+  <div class="bg-blob"></div>
+  <div class="bg-blob"></div>
+</div>
+<div class="bg-grid"></div>
+
+<!-- Confetti layer -->
+<div id="confetti-layer"></div>
+
+<!-- Mute button -->
+<button id="btn-mute" title="Mute / Unmute">🔊</button>
+
+<div id="app">
+
+  <!-- ═══════════════ HOME ═══════════════ -->
+  <div id="screen-home" class="screen active">
+    <div class="hero">
+      <div class="logo">BrokenLine<span>.io</span></div>
+      <div class="tagline">AI Telephone — watch your message gloriously fall apart</div>
+    </div>
+    <div class="feature-pills">
+      <span class="feature-pill">✏️ Write a sentence</span>
+      <span class="feature-pill">🎨 AI draws it</span>
+      <span class="feature-pill">👀 Others describe</span>
+      <span class="feature-pill">🔁 Repeat</span>
+      <span class="feature-pill">😂 Chaos</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:11px;margin-top:4px;">
+      <button class="btn btn-primary btn-full" id="btn-create">✨ Create Room</button>
+      <button class="btn btn-secondary btn-full" id="btn-join-show">🚪 Join Room</button>
+    </div>
+    <div id="join-form" style="display:none;" class="card">
+      <div class="card-title">Join a Game</div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="field">
+          <label>Room Code</label>
+          <input type="text" id="join-code" placeholder="KBFZ" maxlength="4"
+            style="text-transform:uppercase;letter-spacing:6px;font-family:'Syne',sans-serif;font-size:1.6rem;text-align:center;padding:14px;" />
+        </div>
+        <div class="field">
+          <label>Your Nickname</label>
+          <input type="text" id="join-nick" placeholder="e.g. ChaosGremlin" maxlength="20" />
+        </div>
+        <div id="join-error" class="error-msg" style="display:none;"></div>
+        <button class="btn btn-primary btn-full" id="btn-join">Join Game →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ LOBBY ═══════════════ -->
+  <div id="screen-lobby" class="screen">
+    <div class="hero" style="gap:4px;">
+      <div class="logo" style="font-size:2rem;">BrokenLine<span>.io</span></div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="room-code-label">Share this code</div>
+      <div class="room-code-wrap">
+        <div class="room-code" id="lobby-code">KBFZ</div>
+      </div>
+      <button class="btn btn-secondary" id="btn-copy-code" style="padding:7px 20px;font-size:0.82rem;margin-top:6px;">📋 Copy Code</button>
+    </div>
+    <div class="card">
+      <div class="section-title">Players (<span id="lobby-count">0</span>/8)</div>
+      <div class="player-list" id="lobby-players"></div>
+      <div id="lobby-hint" class="text-muted text-center" style="margin-top:12px;font-size:0.85rem;"></div>
+    </div>
+    <button class="btn btn-primary btn-full" id="btn-start" style="display:none;" disabled>🚀 Start Game</button>
+    <div id="lobby-waiting-msg" class="text-muted text-center" style="display:none;">Waiting for host to start…</div>
+  </div>
+
+  <!-- ═══════════════ WRITE ═══════════════ -->
+  <div id="screen-write" class="screen">
+    <div style="text-align:center;">
+      <div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;">✏️ Write a Sentence</div>
+      <div class="text-muted" style="font-size:0.88rem;margin-top:5px;">
+        Describe anything — the weirder the better. The AI artist awaits.
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>Your sentence</label>
+        <textarea id="write-input" placeholder="e.g. A knight trying to eat soup with a sword" maxlength="200"></textarea>
+        <div class="char-count"><span id="write-char">0</span>/200</div>
+      </div>
+    </div>
+    <div class="timer-wrap">
+      <div class="timer-track"><div class="timer-fill" id="write-timer-fill" style="width:100%;"></div></div>
+      <div class="timer-label"><span id="write-timer-sec">45</span>s remaining</div>
+    </div>
+    <button class="btn btn-primary btn-full" id="btn-write-submit">Submit &amp; Watch AI Draw It 🎨</button>
+    <div id="write-error" class="error-msg" style="display:none;"></div>
+  </div>
+
+  <!-- ═══════════════ AI DRAWING ═══════════════ -->
+  <div id="screen-drawing" class="screen">
+    <div style="text-align:center;">
+      <div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;">🎨 AI is Drawing…</div>
+    </div>
+    <div id="drawing-spinner" class="spinner-wrap card">
+      <div class="spinner"></div>
+      <div class="spinner-msg" id="spinner-msg">Summoning the AI…</div>
+    </div>
+    <div id="drawing-result" style="display:none;" class="card">
+      <img id="drawing-img" class="gen-image" alt="AI generated drawing" />
+      <div style="margin-top:12px;color:var(--muted);font-size:0.82rem;text-align:center;">
+        The AI interpreted your sentence ✨
+      </div>
+    </div>
+    <div id="drawing-next-btn-wrap" style="display:none;">
+      <button class="btn btn-primary btn-full" id="btn-drawing-next">Continue →</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ DESCRIBE ═══════════════ -->
+  <div id="screen-describe" class="screen">
+    <div style="text-align:center;">
+      <div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;">🔍 What Do You See?</div>
+      <div class="text-muted" style="font-size:0.88rem;margin-top:5px;">
+        Describe the image below. You cannot see any previous sentences!
+      </div>
+    </div>
+    <div class="card" style="padding:12px;">
+      <img id="describe-img" class="gen-image" alt="Describe this drawing" />
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>Your description</label>
+        <textarea id="describe-input" placeholder="What do you see in this image?" maxlength="200"></textarea>
+        <div class="char-count"><span id="describe-char">0</span>/200</div>
+      </div>
+    </div>
+    <div class="timer-wrap">
+      <div class="timer-track"><div class="timer-fill" id="describe-timer-fill" style="width:100%;"></div></div>
+      <div class="timer-label"><span id="describe-timer-sec">45</span>s remaining</div>
+    </div>
+    <button class="btn btn-primary btn-full" id="btn-describe-submit">Submit Description</button>
+    <div id="describe-error" class="error-msg" style="display:none;"></div>
+  </div>
+
+  <!-- ═══════════════ WAITING ═══════════════ -->
+  <div id="screen-waiting" class="screen">
+    <div class="hero">
+      <div class="logo" style="font-size:1.9rem;">BrokenLine<span>.io</span></div>
+    </div>
+    <div class="card" style="text-align:center;padding:32px 22px;">
+      <div class="big-emoji">⏳</div>
+      <div style="font-family:'Syne',sans-serif;font-size:1.15rem;font-weight:800;margin-top:14px;">Hang tight…</div>
+      <div class="text-muted" style="margin-top:8px;font-size:0.9rem;">
+        It's <strong id="waiting-whose-turn" style="color:var(--accent);">someone</strong>'s turn
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:20px;">
+        <div class="dot-pulse"><span></span><span></span><span></span></div>
+        <span id="waiting-status-text" class="text-muted" style="font-size:0.84rem;">Game in progress</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">Game progress</div>
+      <div class="prog-track" style="margin-bottom:8px;">
+        <div class="prog-fill" id="waiting-progress" style="width:0%;"></div>
+      </div>
+      <div style="text-align:center;color:var(--muted);font-size:0.84rem;" id="waiting-step-counter">Step 0 of 0</div>
+    </div>
+    <div class="text-muted text-center" style="font-size:0.8rem;">You'll be notified automatically when it's your turn.</div>
+  </div>
+
+  <!-- ═══════════════ RESULTS ═══════════════ -->
+  <div id="screen-results" class="screen">
+    <div style="text-align:center;">
+      <div class="logo" style="font-size:2.1rem;">BrokenLine<span>.io</span></div>
+      <div class="tagline">The chain has been revealed 🎉</div>
+    </div>
+    <div class="reveal-summary" id="results-summary" style="display:none;">
+      <div>
+        <div class="reveal-label">Started as</div>
+        <div class="reveal-text" id="results-original"></div>
+      </div>
+      <div class="reveal-arrow">↓ became ↓</div>
+      <div>
+        <div class="reveal-label">Ended as</div>
+        <div class="reveal-text" id="results-final"></div>
+      </div>
+    </div>
+    <div class="results-chain" id="results-chain"></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
+      <button class="btn btn-primary btn-full" id="btn-share">📋 Copy Results to Clipboard</button>
+      <button class="btn btn-secondary btn-full" id="btn-play-again">🔄 Play Again</button>
+    </div>
+    <div id="share-msg" class="success-msg" style="display:none;">Copied to clipboard! ✓</div>
+  </div>
+
+</div><!-- /#app -->
+
+<script>
+// ══════════════════════════════════════════════════
+//  BrokenLine.io
+// ══════════════════════════════════════════════════
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── State ──────────────────────────────────────────────
+const state = {
+  roomId: null, roomCode: null, playerId: null, playerName: null,
+  isHost: false, players: [], currentStep: 0, totalSteps: 0,
+  myTurnIndex: -1, currentImageUrl: null, roomSub: null, stepsSub: null,
+};
+
+// ── Player avatar colors ───────────────────────────────
+const AVATAR_COLORS = [
+  '#7C6FFF','#4ADE80','#FBBF24','#F87171',
+  '#38BDF8','#FB7185','#A78BFA','#34D399',
+];
+
+// ═══════════════════════════════════════════════════════
+//  AUDIO SYSTEM
+// ═══════════════════════════════════════════════════════
+let audioCtx = null;
+let masterGain = null;
+let musicGain = null;
+let isMuted = false;
+let audioReady = false;
+let musicBeat = 0;
+let musicSchedulerTimer = null;
+let musicPlaying = false;
+
+// Chord progression: C  G  Am  F  (I V vi IV)
+const CHORDS = [
+  [130.81, 164.81, 196.00, 261.63],
+  [98.00,  123.47, 146.83, 196.00],
+  [110.00, 130.81, 164.81, 220.00],
+  [87.31,  110.00, 130.81, 174.61],
+];
+
+function initAudio() {
+  if (audioReady) return;
+  audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 1;
+  masterGain.connect(audioCtx.destination);
+  musicGain  = audioCtx.createGain();
+  musicGain.gain.value = 0.18;
+  musicGain.connect(masterGain);
+  audioReady = true;
+  startMusic();
+}
+
+function setMute(m) {
+  isMuted = m;
+  el('btn-mute').textContent = m ? '🔇' : '🔊';
+  if (audioReady) masterGain.gain.value = m ? 0 : 1;
+}
+
+el('btn-mute').addEventListener('click', () => {
+  initAudio();
+  setMute(!isMuted);
+});
+
+// First user interaction unlocks audio
+document.addEventListener('click', initAudio, { once: true });
+document.addEventListener('keydown', initAudio, { once: true });
+
+// ── Background music (Web Audio scheduler) ──────────────
+const BEAT_SEC  = 60 / 128 / 4;  // 16th note at 128 BPM ≈ 0.117s
+const LOOKAHEAD = 25;             // ms between scheduler ticks
+const SCHEDULE  = 0.12;          // seconds ahead to schedule
+
+let nextBeatTime = 0;
+
+function startMusic() {
+  if (musicPlaying || !audioCtx) return;
+  musicPlaying = true;
+  musicBeat = 0;
+  nextBeatTime = audioCtx.currentTime + 0.05;
+  runMusicScheduler();
+}
+
+function runMusicScheduler() {
+  if (!musicPlaying) return;
+  while (nextBeatTime < audioCtx.currentTime + SCHEDULE) {
+    scheduleMusicBeat(musicBeat, nextBeatTime);
+    nextBeatTime += BEAT_SEC;
+    musicBeat++;
+  }
+  musicSchedulerTimer = setTimeout(runMusicScheduler, LOOKAHEAD);
+}
+
+function scheduleMusicBeat(beat, time) {
+  if (!audioCtx || !musicGain) return;
+  const loopLen = 64;       // 4 chords × 16 beats
+  const b       = beat % loopLen;
+  const cIdx    = Math.floor(b / 16) % CHORDS.length;
+  const bInC    = b % 16;
+  const chord   = CHORDS[cIdx];
+
+  // Arpeggio: step through chord notes
+  mNote(chord[bInC % chord.length] * 2, BEAT_SEC * 0.75, 0.055, 'square', time);
+
+  // Bass hit on each chord downbeat
+  if (bInC === 0)
+    mNote(chord[0],              BEAT_SEC * 10,   0.10,  'square', time);
+
+  // Hi-hat on every other 16th
+  if (bInC % 2 === 0)
+    mNoise(0.018, BEAT_SEC * 0.04, time);
+}
+
+function mNote(freq, dur, vol, type, when) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(musicGain);
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, when);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + dur * 0.85);
+  o.start(when); o.stop(when + dur);
+}
+
+function mNoise(vol, dur, when) {
+  const buf  = audioCtx.createBuffer(1, Math.ceil(audioCtx.sampleRate * dur), audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const g = audioCtx.createGain();
+  src.connect(g); g.connect(musicGain);
+  g.gain.setValueAtTime(vol, when);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+  src.start(when); src.stop(when + dur);
+}
+
+// ── SFX ──────────────────────────────────────────────────
+
+// Soft "pop" — player joins
+function sfxPop() {
+  if (!audioCtx || isMuted) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(masterGain);
+  o.type = 'sine';
+  o.frequency.setValueAtTime(320, t);
+  o.frequency.exponentialRampToValueAtTime(680, t + 0.04);
+  g.gain.setValueAtTime(0.28, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  o.start(t); o.stop(t + 0.18);
+}
+
+// Tick — last 10 seconds of timer
+function sfxTick() {
+  if (!audioCtx || isMuted) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(masterGain);
+  o.type = 'sine';
+  o.frequency.value = 1400;
+  g.gain.setValueAtTime(0.12, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+  o.start(t); o.stop(t + 0.07);
+}
+
+// Whoosh — AI starts drawing
+function sfxWhoosh() {
+  if (!audioCtx || isMuted) return;
+  const t   = audioCtx.currentTime;
+  const dur = 0.55;
+  const bufSize = Math.ceil(audioCtx.sampleRate * dur);
+  const buf  = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+  const src  = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const filt = audioCtx.createBiquadFilter();
+  filt.type = 'bandpass';
+  filt.frequency.setValueAtTime(3800, t);
+  filt.frequency.exponentialRampToValueAtTime(180, t + dur);
+  filt.Q.value = 1.8;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.35, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(filt); filt.connect(g); g.connect(masterGain);
+  src.start(t); src.stop(t + dur);
+}
+
+// Reveal sting — results chain appears
+function sfxRevealSting() {
+  if (!audioCtx || isMuted) return;
+  [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+    const t = audioCtx.currentTime + i * 0.11;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(masterGain);
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+    o.start(t); o.stop(t + 0.45);
+  });
+}
+
+// Fanfare — final summary comparison
+function sfxFanfare() {
+  if (!audioCtx || isMuted) return;
+  const seq = [
+    { t:0,   f:523.25, d:0.55 },
+    { t:0,   f:659.25, d:0.55 },
+    { t:0,   f:783.99, d:0.55 },
+    { t:0.1, f:1046.5, d:0.5  },
+    { t:0.3, f:1174.7, d:0.42 },
+    { t:0.5, f:1318.5, d:0.6  },
+    { t:0.7, f:1567.9, d:0.75 },
+    { t:0.8, f:2093.0, d:0.9  },
+  ];
+  seq.forEach(({ t, f, d }) => {
+    const when = audioCtx.currentTime + t;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(masterGain);
+    o.type = 'square';
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.1, when);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + d * 0.88);
+    o.start(when); o.stop(when + d);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════
+function uid()  { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+function rCode(){ return Math.random().toString(36).slice(2,6).toUpperCase(); }
+function el(id) { return document.getElementById(id); }
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  el(id).classList.add('active');
+}
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function showErr(id, msg) {
+  const e = el(id); e.textContent = msg; e.style.display = 'block';
+  setTimeout(() => { e.style.display = 'none'; }, 3500);
+}
+function imageUrl(prompt) {
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=384&nologo=true&model=flux&seed=${Math.floor(Math.random()*99999)}`;
+}
+
+// Ripple effect on buttons
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.btn');
+  if (!btn) return;
+  const r = document.createElement('span');
+  r.className = 'ripple';
+  const rect = btn.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height);
+  r.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX-rect.left-size/2}px;top:${e.clientY-rect.top-size/2}px;`;
+  btn.appendChild(r);
+  r.addEventListener('animationend', () => r.remove());
+});
+
+// Character counters
+el('write-input').addEventListener('input', function() {
+  el('write-char').textContent = this.value.length;
+});
+el('describe-input').addEventListener('input', function() {
+  el('describe-char').textContent = this.value.length;
+});
+
+// ── Spinner messages ───────────────────────────────────
+const SPINNER_MSGS = [
+  'AI is having a creative crisis…',
+  'Picasso was busy, sent the B-team…',
+  'Converting words into vague shapes…',
+  'The AI squinted really hard…',
+  'Running out of crayons…',
+  'Abstract interpretation loading…',
+  'The robot is doing its absolute best…',
+  'Art is subjective, right?',
+  'Please hold — AI is panicking…',
+  'Mixing pixels (and vibes)…',
+  'Asking 1000 monkeys on typewriters…',
+  'Close enough is good enough…',
+];
+let spinnerIdx = 0, spinnerTimer = null;
+function startSpinner() {
+  spinnerIdx = 0; el('spinner-msg').textContent = SPINNER_MSGS[0];
+  spinnerTimer = setInterval(() => {
+    spinnerIdx = (spinnerIdx + 1) % SPINNER_MSGS.length;
+    el('spinner-msg').textContent = SPINNER_MSGS[spinnerIdx];
+  }, 2400);
+}
+function stopSpinner() { clearInterval(spinnerTimer); spinnerTimer = null; }
+
+// ── Timer ──────────────────────────────────────────────
+let timerInt = null;
+function startTimer(fillId, secId, secs, onExpire) {
+  stopTimer();
+  let rem = secs;
+  const fill = el(fillId), sec = el(secId);
+  fill.classList.remove('pulse');
+  function tick() {
+    const pct = (rem / secs) * 100;
+    fill.style.width = pct + '%';
+    if      (pct > 50) { fill.style.background = 'var(--accent)'; }
+    else if (pct > 20) { fill.style.background = 'var(--amber)'; }
+    else               { fill.style.background = 'var(--red)'; }
+    if (rem <= 10) { fill.classList.add('pulse'); sfxTick(); }
+    sec.textContent = rem;
+    if (rem <= 0) { clearInterval(timerInt); onExpire(); }
+    rem--;
+  }
+  tick();
+  timerInt = setInterval(tick, 1000);
+}
+function stopTimer() { clearInterval(timerInt); timerInt = null; }
+
+// ══════════════════════════════════════════════════════
+//  CONFETTI
+// ══════════════════════════════════════════════════════
+function launchConfetti() {
+  const layer  = el('confetti-layer');
+  layer.innerHTML = '';
+  const colors = ['#7C6FFF','#4ADE80','#FBBF24','#F87171','#38BDF8','#A78BFA'];
+  for (let i = 0; i < 90; i++) {
+    const p = document.createElement('div');
+    p.className = 'confetti-p';
+    const size = Math.random() * 9 + 4;
+    p.style.cssText = [
+      `width:${size}px`, `height:${size}px`,
+      `background:${colors[Math.floor(Math.random()*colors.length)]}`,
+      `border-radius:${Math.random()>.5?'50%':'3px'}`,
+      `left:${Math.random()*100}%`, `top:-12px`,
+      `--dx:${(Math.random()-0.5)*240}px`,
+      `--rot:${Math.random()*720}deg`,
+      `animation:cFall ${Math.random()*2+2.5}s ease-in ${Math.random()*0.6}s forwards`,
+    ].join(';');
+    layer.appendChild(p);
+  }
+  setTimeout(() => { layer.innerHTML = ''; }, 5000);
+}
+
+// ══════════════════════════════════════════════════════
+//  SCREENS — HOME
+// ══════════════════════════════════════════════════════
+el('btn-create').addEventListener('click', async () => {
+  initAudio();
+  const name = prompt('Enter your nickname:');
+  if (!name || !name.trim()) return;
+  await createRoom(name.trim());
+});
+
+el('btn-join-show').addEventListener('click', () => {
+  initAudio();
+  const f = el('join-form');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+});
+
+el('btn-join').addEventListener('click', async () => {
+  const code = el('join-code').value.trim().toUpperCase();
+  const nick  = el('join-nick').value.trim();
+  if (!code || code.length !== 4) return showErr('join-error', 'Enter a 4-letter code');
+  if (!nick)                       return showErr('join-error', 'Enter a nickname');
+  await joinRoom(code, nick);
+});
+
+// ── Create room ───────────────────────────────────────
+async function createRoom(name) {
+  state.playerId = uid(); state.playerName = name; state.isHost = true;
+  let code, existing;
+  do {
+    code = rCode();
+    const { data } = await sb.from('rooms').select('id').eq('code', code).maybeSingle();
+    existing = data;
+  } while (existing);
+
+  const player = { id: state.playerId, name, isHost: true };
+  const { data, error } = await sb.from('rooms').insert({
+    code, host_id: state.playerId, player_count: 1,
+    current_step: 0, status: 'lobby', players: [player],
+  }).select().single();
+  if (error) { alert('Error creating room: ' + error.message); return; }
+
+  state.roomId = data.id; state.roomCode = code; state.players = [player];
+  enterLobby();
+}
+
+// ── Join room ─────────────────────────────────────────
+async function joinRoom(code, name) {
+  const { data: room, error } = await sb.from('rooms').select('*').eq('code', code).maybeSingle();
+  if (error || !room)          return showErr('join-error', 'Room not found');
+  if (room.status !== 'lobby') return showErr('join-error', 'Game already started');
+  const players = room.players || [];
+  if (players.length >= 8)     return showErr('join-error', 'Room is full (8/8)');
+
+  state.playerId = uid(); state.playerName = name;
+  state.isHost = false; state.roomId = room.id; state.roomCode = code;
+
+  const player    = { id: state.playerId, name, isHost: false };
+  const newP      = [...players, player];
+  const { error: upErr } = await sb.from('rooms')
+    .update({ players: newP, player_count: newP.length }).eq('id', room.id);
+  if (upErr) return showErr('join-error', 'Failed to join: ' + upErr.message);
+  state.players = newP;
+  enterLobby();
+}
+
+// ══════════════════════════════════════════════════════
+//  LOBBY
+// ══════════════════════════════════════════════════════
+function enterLobby() {
+  show('screen-lobby');
+  el('lobby-code').textContent = state.roomCode;
+  renderPlayers(state.players);
+  updateStartBtn();
+  subscribeRoom();
+}
+
+function renderPlayers(players) {
+  state.players = players;
+  el('lobby-count').textContent = players.length;
+  const list = el('lobby-players');
+  list.innerHTML = '';
+  players.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'player-item';
+    div.style.animationDelay = (i * 60) + 'ms';
+    div.innerHTML = `
+      <div class="player-avatar" style="background:${AVATAR_COLORS[i % AVATAR_COLORS.length]}">
+        ${escHtml(p.name.slice(0,2).toUpperCase())}
+      </div>
+      <div class="player-name">${escHtml(p.name)}</div>
+      ${p.isHost ? '<span class="player-host-badge">Host</span>' : ''}
+      ${p.id === state.playerId ? '<span class="player-you-badge">(you)</span>' : ''}
+    `;
+    list.appendChild(div);
+  });
+}
+
+function updateStartBtn() {
+  const n = state.players.length;
+  if (state.isHost) {
+    el('btn-start').style.display = 'block';
+    el('lobby-waiting-msg').style.display = 'none';
+    el('btn-start').disabled = n < 2;
+    el('lobby-hint').textContent = n < 2
+      ? 'Need at least 2 players to start'
+      : `${n} player${n > 1 ? 's' : ''} ready — start when you like`;
+  } else {
+    el('btn-start').style.display = 'none';
+    el('lobby-waiting-msg').style.display = 'block';
+  }
+}
+
+el('btn-start').addEventListener('click', async () => {
+  if (state.players.length < 2) return;
+  await sb.from('rooms').update({ status: 'playing', current_step: 0 }).eq('id', state.roomId);
+});
+
+el('btn-copy-code').addEventListener('click', () => {
+  navigator.clipboard.writeText(state.roomCode).catch(() => {});
+  el('btn-copy-code').textContent = '✓ Copied!';
+  setTimeout(() => { el('btn-copy-code').textContent = '📋 Copy Code'; }, 2000);
+});
+
+// ══════════════════════════════════════════════════════
+//  REALTIME
+// ══════════════════════════════════════════════════════
+function subscribeRoom() {
+  if (state.roomSub) sb.removeChannel(state.roomSub);
+  state.roomSub = sb.channel('room:' + state.roomId)
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'rooms',
+      filter: `id=eq.${state.roomId}`,
+    }, p => handleRoomUpdate(p.new))
+    .subscribe();
+}
+
+function subscribeSteps() {
+  if (state.stepsSub) sb.removeChannel(state.stepsSub);
+  state.stepsSub = sb.channel('steps:' + state.roomId)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'game_steps',
+      filter: `room_id=eq.${state.roomId}`,
+    }, p => handleNewStep(p.new))
+    .subscribe();
+}
+
+async function handleRoomUpdate(room) {
+  const newPlayers  = room.players || [];
+  const curScreen   = document.querySelector('.screen.active')?.id;
+  const prevCount   = state.players.length;
+
+  if (room.status === 'lobby') {
+    // Play pop if someone new joined
+    if (newPlayers.length > prevCount) sfxPop();
+    renderPlayers(newPlayers);
+    updateStartBtn();
+    return;
+  }
+  if (room.status === 'playing') {
+    if (curScreen === 'screen-lobby') {
+      state.players    = newPlayers;
+      state.totalSteps = newPlayers.length;
+      state.myTurnIndex = newPlayers.findIndex(p => p.id === state.playerId);
+      subscribeSteps();
+    }
+    await advanceToStep(room.current_step, room);
+    return;
+  }
+  if (room.status === 'finished') {
+    await showResults();
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  GAME FLOW
+// ══════════════════════════════════════════════════════
+async function advanceToStep(step, room) {
+  const players = state.players;
+  const total   = players.length;
+  state.currentStep = step; state.totalSteps = total;
+  if (step >= total) { await showResults(); return; }
+
+  const active   = players[step];
+  const isMyTurn = active?.id === state.playerId;
+
+  if (isMyTurn) {
+    if (step === 0) startWriteScreen();
+    else            await startDescribeScreen(step);
+  } else {
+    showWaitingScreen(active?.name || '?', step, total);
+  }
+}
+
+// ── Write ─────────────────────────────────────────────
+function startWriteScreen() {
+  show('screen-write');
+  el('write-input').value = ''; el('write-char').textContent = '0';
+  el('write-error').style.display = 'none';
+  el('btn-write-submit').disabled = false;
+  startTimer('write-timer-fill','write-timer-sec', 45, () => {
+    const v = el('write-input').value.trim();
+    submitSentence(v || 'a mysterious undefined thing');
+  });
+}
+
+el('btn-write-submit').addEventListener('click', () => {
+  const v = el('write-input').value.trim();
+  if (!v) return showErr('write-error', 'Write something first!');
+  stopTimer(); submitSentence(v);
+});
+
+async function submitSentence(sentence) {
+  el('btn-write-submit').disabled = true;
+  await sb.from('game_steps').insert({
+    room_id: state.roomId, step_number: state.currentStep,
+    type: 'sentence', content: sentence, player_name: state.playerName,
+  });
+  await showDrawingScreen(sentence);
+}
+
+// ── AI Drawing ────────────────────────────────────────
+async function showDrawingScreen(prompt) {
+  show('screen-drawing');
+  el('drawing-result').style.display = 'none';
+  el('drawing-next-btn-wrap').style.display = 'none';
+  el('drawing-spinner').style.display = 'flex';
+  startSpinner();
+  sfxWhoosh();
+
+  const url = imageUrl(prompt);
+  state.currentImageUrl = url;
+  const img = el('drawing-img');
+
+  img.onload = () => {
+    stopSpinner();
+    el('drawing-spinner').style.display = 'none';
+    el('drawing-result').style.display = 'block';
+    advanceRoomStep();
+  };
+  img.onerror = () => {
+    stopSpinner();
+    el('spinner-msg').textContent = 'Image failed — skipping…';
+    setTimeout(() => advanceRoomStep(), 1500);
+  };
+  img.src = url;
+}
+
+async function advanceRoomStep() {
+  const nextStep = state.currentStep + 1;
+  el('drawing-next-btn-wrap').style.display = 'block';
+
+  const isLast = nextStep >= state.totalSteps;
+  el('btn-drawing-next').textContent = isLast ? '🎉 See Results' : 'Continue →';
+  el('btn-drawing-next').disabled = false;
+
+  el('btn-drawing-next').onclick = async () => {
+    el('btn-drawing-next').disabled = true;
+    const update = isLast
+      ? { current_step: nextStep, status: 'finished' }
+      : { current_step: nextStep };
+    await sb.from('rooms').update(update).eq('id', state.roomId);
+  };
+}
+
+// ── Describe ──────────────────────────────────────────
+async function startDescribeScreen(step) {
+  const { data: steps } = await sb.from('game_steps')
+    .select('*').eq('room_id', state.roomId).order('step_number', { ascending: true });
+
+  const prevSentence = steps?.find(s => s.step_number === step - 1 && s.type === 'sentence');
+  if (!prevSentence) { showWaitingScreen('?', step, state.totalSteps); return; }
+
+  show('screen-describe');
+  el('describe-input').value = ''; el('describe-char').textContent = '0';
+  el('describe-error').style.display = 'none';
+  el('btn-describe-submit').disabled = false;
+  el('describe-img').src = imageUrl(prevSentence.content);
+
+  startTimer('describe-timer-fill','describe-timer-sec', 45, () => {
+    const v = el('describe-input').value.trim();
+    submitDescription(v || 'something indescribable');
+  });
+}
+
+el('btn-describe-submit').addEventListener('click', () => {
+  const v = el('describe-input').value.trim();
+  if (!v) return showErr('describe-error', 'Describe what you see!');
+  stopTimer(); submitDescription(v);
+});
+
+async function submitDescription(desc) {
+  el('btn-describe-submit').disabled = true;
+  await sb.from('game_steps').insert({
+    room_id: state.roomId, step_number: state.currentStep,
+    type: 'description', content: desc, player_name: state.playerName,
+  });
+  await showDrawingScreen(desc);
+}
+
+// ── Step watcher update ───────────────────────────────
+function handleNewStep(newStep) {
+  if (document.querySelector('.screen.active')?.id !== 'screen-waiting') return;
+  el('waiting-step-counter').textContent = `Step ${newStep.step_number + 1} of ${state.totalSteps}`;
+  const pct = ((newStep.step_number + 1) / state.totalSteps) * 100;
+  el('waiting-progress').style.width = pct + '%';
+}
+
+// ── Waiting ───────────────────────────────────────────
+function showWaitingScreen(whose, step, total) {
+  show('screen-waiting');
+  el('waiting-whose-turn').textContent = whose;
+  el('waiting-step-counter').textContent = `Step ${step + 1} of ${total}`;
+  el('waiting-progress').style.width = ((step / total) * 100) + '%';
+}
+
+// ══════════════════════════════════════════════════════
+//  RESULTS
+// ══════════════════════════════════════════════════════
+async function showResults() {
+  show('screen-results');
+  sfxRevealSting();
+  launchConfetti();
+
+  const { data: steps } = await sb.from('game_steps')
+    .select('*').eq('room_id', state.roomId).order('step_number', { ascending: true });
+  if (!steps?.length) return;
+
+  const sentenceSteps = steps.filter(s => s.type === 'sentence');
+
+  // Summary card
+  const first = sentenceSteps[0];
+  const last  = steps.filter(s => s.type === 'description').pop()
+             || sentenceSteps[sentenceSteps.length - 1];
+  if (first && last && first !== last) {
+    el('results-original').textContent = '"' + first.content + '"';
+    el('results-final').textContent    = '"' + last.content + '"';
+    el('results-summary').style.display = 'flex';
+    setTimeout(() => sfxFanfare(), 600);
+  }
+
+  // Chain reveal
+  const chain = el('results-chain'); chain.innerHTML = '';
+  let delay = 200;
+  for (let i = 0; i < sentenceSteps.length; i++) {
+    const sent = sentenceSteps[i];
+    addChainStep(chain, { type:'sentence', content:sent.content, player:sent.player_name, delay });
+    delay += 450;
+    addConnector(chain, delay); delay += 200;
+    addChainStep(chain, { type:'image', content:imageUrl(sent.content), player:'AI', delay });
+    delay += 550;
+    if (i < sentenceSteps.length - 1) { addConnector(chain, delay); delay += 200; }
+  }
+}
+
+function addChainStep(container, { type, content, player, delay }) {
+  const wrap  = document.createElement('div'); wrap.className = 'chain-step';
+  wrap.style.transitionDelay = delay + 'ms';
+  const inner = document.createElement('div');
+  inner.className = `chain-step-inner ${type === 'image' ? 'image-step' : 'sentence-step'}`;
+
+  if (type === 'sentence') {
+    inner.innerHTML = `
+      <div class="step-meta">
+        <span class="step-badge badge-sentence">✏️ Sentence</span>
+        <span>${escHtml(player)}</span>
+      </div>
+      <div style="font-size:1rem;line-height:1.55;">"${escHtml(content)}"</div>
+    `;
+  } else {
+    const img = document.createElement('img');
+    img.src = content; img.alt = 'AI drawing';
+    img.style.cssText = 'width:100%;border-radius:8px;display:block;';
+    const meta = document.createElement('div');
+    meta.className = 'step-meta';
+    meta.innerHTML = `<span class="step-badge badge-image">🎨 AI Drawing</span>`;
+    inner.appendChild(meta); inner.appendChild(img);
+  }
+  wrap.appendChild(inner); container.appendChild(wrap);
+  setTimeout(() => wrap.classList.add('visible'), delay + 50);
+}
+
+function addConnector(container, delay) {
+  const c = document.createElement('div');
+  c.className = 'chain-connector chain-step';
+  c.style.transitionDelay = delay + 'ms';
+  c.textContent = '↓';
+  container.appendChild(c);
+  setTimeout(() => c.classList.add('visible'), delay + 50);
+}
+
+// ── Share ─────────────────────────────────────────────
+el('btn-share').addEventListener('click', async () => {
+  const orig  = el('results-original').textContent;
+  const final = el('results-final').textContent;
+  const text  = `BrokenLine.io 🎨\nStarted: ${orig}\nBecame: ${final}\n\nPlay free at BrokenLine.io`;
+  try { await navigator.clipboard.writeText(text); } catch {}
+  el('share-msg').style.display = 'block';
+  setTimeout(() => { el('share-msg').style.display = 'none'; }, 3000);
+});
+
+el('btn-play-again').addEventListener('click', () => {
+  if (state.roomSub)  sb.removeChannel(state.roomSub);
+  if (state.stepsSub) sb.removeChannel(state.stepsSub);
+  stopTimer(); stopSpinner();
+  Object.assign(state, {
+    roomId:null, roomCode:null, playerId:null, playerName:null,
+    isHost:false, players:[], currentStep:0, totalSteps:0,
+    myTurnIndex:-1, currentImageUrl:null, roomSub:null, stepsSub:null,
+  });
+  show('screen-home');
+});
+</script>
+</body>
+</html>
