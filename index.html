@@ -1214,31 +1214,62 @@ async function showDrawingScreen(prompt) {
   sfxWhoosh();
 
   const img = el('drawing-img');
+  const MODELS = ['flux', 'turbo', 'flux-realism', 'flux'];
   let attempts = 0;
+  let done = false;
+  let blobUrl = null;
 
-  function tryLoad() {
+  async function tryLoad() {
+    if (done) return;
     attempts++;
-    const url = imageUrl(prompt); // new seed each attempt
+
+    const model = MODELS[(attempts - 1) % MODELS.length];
+    const seed  = Math.floor(Math.random() * 999999);
+    const url   = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=384&nologo=true&model=${model}&seed=${seed}`;
     state.currentImageUrl = url;
 
-    img.onload = () => {
-      stopSpinner();
-      el('drawing-spinner').style.display = 'none';
-      el('drawing-result').style.display = 'block';
-      advanceRoomStep();
-    };
-    img.onerror = () => {
+    if (attempts > 1) el('spinner-msg').textContent = `Retrying (${attempts}/4) with ${model}…`;
+
+    // Use fetch() + blob URL instead of direct img.src so we can:
+    //  1. Abort on timeout (no hanging requests)
+    //  2. Verify the response is actually an image (avoids ORB/CORS blocks on error pages)
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 20000);
+
+    try {
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      if (!blob.type.startsWith('image/')) throw new Error(`Not an image (${blob.type})`);
+
+      // Revoke previous blob URL to free memory
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      blobUrl = URL.createObjectURL(blob);
+
+      img.onload = () => {
+        if (done) return;
+        done = true;
+        stopSpinner();
+        el('drawing-spinner').style.display = 'none';
+        el('drawing-result').style.display = 'block';
+        advanceRoomStep();
+      };
+      img.src = blobUrl;
+
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (done) return;
       if (attempts < 4) {
-        el('spinner-msg').textContent = `Attempt ${attempts} failed, retrying…`;
+        el('spinner-msg').textContent = `Attempt ${attempts} failed (${err.message}), retrying…`;
         setTimeout(tryLoad, 1500);
       } else {
-        // After 4 tries give up and move on
+        done = true;
         stopSpinner();
-        el('spinner-msg').textContent = 'AI ghosted us — moving on…';
-        setTimeout(() => advanceRoomStep(), 1500);
+        el('spinner-msg').textContent = 'AI completely gave up — moving on…';
+        setTimeout(() => advanceRoomStep(), 2000);
       }
-    };
-    img.src = url;
+    }
   }
 
   tryLoad();
