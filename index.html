@@ -389,6 +389,21 @@
       <button class="btn btn-primary btn-full" id="btn-create">✨ Create Room</button>
       <button class="btn btn-secondary btn-full" id="btn-join-show">🚪 Join Room</button>
     </div>
+
+    <!-- Create Room form -->
+    <div id="create-form" style="display:none;" class="card">
+      <div class="card-title">Create a Room</div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="field">
+          <label>Your Nickname</label>
+          <input type="text" id="create-nick" placeholder="e.g. ChaosGremlin" maxlength="20" />
+        </div>
+        <div id="create-error" class="error-msg" style="display:none;"></div>
+        <button class="btn btn-primary btn-full" id="btn-create-confirm">Create Room ✨</button>
+      </div>
+    </div>
+
+    <!-- Join Room form -->
     <div id="join-form" style="display:none;" class="card">
       <div class="card-title">Join a Game</div>
       <div style="display:flex;flex-direction:column;gap:14px;">
@@ -417,7 +432,7 @@
       <div class="room-code-wrap">
         <div class="room-code" id="lobby-code">KBFZ</div>
       </div>
-      <button class="btn btn-secondary" id="btn-copy-code" style="padding:7px 20px;font-size:0.82rem;margin-top:6px;">📋 Copy Code</button>
+      <button class="btn btn-secondary" id="btn-copy-code" style="padding:7px 20px;font-size:0.82rem;margin-top:6px;">📋 Copy Invite Link</button>
     </div>
     <div class="card">
       <div class="section-title">Players (<span id="lobby-count">0</span>/8)</div>
@@ -900,19 +915,75 @@ function launchConfetti() {
 }
 
 // ══════════════════════════════════════════════════════
+//  URL ROOM CODE — auto-open join form if ?room=XXXX
+// ══════════════════════════════════════════════════════
+(function() {
+  const params = new URLSearchParams(location.search);
+  const roomParam = params.get('room');
+  if (roomParam && roomParam.length === 4) {
+    el('join-code').value = roomParam.toUpperCase();
+    el('join-form').style.display = 'block';
+    setTimeout(() => el('join-nick').focus(), 100);
+  }
+})();
+
+// ══════════════════════════════════════════════════════
+//  NICKNAME PERSISTENCE
+// ══════════════════════════════════════════════════════
+function saveNick(name) { localStorage.setItem('bl_nickname', name); }
+function loadNick()     { return localStorage.getItem('bl_nickname') || ''; }
+
+// Pre-fill nickname inputs on page load
+(function() {
+  const saved = loadNick();
+  if (saved) {
+    el('create-nick').value = saved;
+    el('join-nick').value   = saved;
+  }
+})();
+
+// Keep both nickname fields in sync as user types
+el('create-nick').addEventListener('input', function() {
+  el('join-nick').value = this.value;
+});
+el('join-nick').addEventListener('input', function() {
+  el('create-nick').value = this.value;
+});
+
+// ══════════════════════════════════════════════════════
 //  SCREENS — HOME
 // ══════════════════════════════════════════════════════
-el('btn-create').addEventListener('click', async () => {
+function toggleForm(showId, hideId) {
+  const show_ = el(showId), hide_ = el(hideId);
+  const isVisible = show_.style.display !== 'none';
+  show_.style.display = isVisible ? 'none' : 'block';
+  hide_.style.display = 'none';
+}
+
+el('btn-create').addEventListener('click', () => {
   initAudio();
-  const name = prompt('Enter your nickname:');
-  if (!name || !name.trim()) return;
-  await createRoom(name.trim());
+  toggleForm('create-form', 'join-form');
+  if (el('create-form').style.display !== 'none') el('create-nick').focus();
 });
 
 el('btn-join-show').addEventListener('click', () => {
   initAudio();
-  const f = el('join-form');
-  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  toggleForm('join-form', 'create-form');
+  if (el('join-form').style.display !== 'none') el('join-code').focus();
+});
+
+el('btn-create-confirm').addEventListener('click', async () => {
+  const nick = el('create-nick').value.trim();
+  if (!nick) return showErr('create-error', 'Enter a nickname first');
+  saveNick(nick);
+  el('btn-create-confirm').disabled = true;
+  await createRoom(nick);
+  el('btn-create-confirm').disabled = false;
+});
+
+// Allow Enter key in create form
+el('create-nick').addEventListener('keydown', e => {
+  if (e.key === 'Enter') el('btn-create-confirm').click();
 });
 
 el('btn-join').addEventListener('click', async () => {
@@ -920,7 +991,18 @@ el('btn-join').addEventListener('click', async () => {
   const nick  = el('join-nick').value.trim();
   if (!code || code.length !== 4) return showErr('join-error', 'Enter a 4-letter code');
   if (!nick)                       return showErr('join-error', 'Enter a nickname');
+  saveNick(nick);
+  el('btn-join').disabled = true;
   await joinRoom(code, nick);
+  el('btn-join').disabled = false;
+});
+
+// Allow Enter key in join form
+el('join-nick').addEventListener('keydown', e => {
+  if (e.key === 'Enter') el('btn-join').click();
+});
+el('join-code').addEventListener('keydown', e => {
+  if (e.key === 'Enter') el('join-nick').focus();
 });
 
 // ── Create room ───────────────────────────────────────
@@ -973,6 +1055,8 @@ function enterLobby() {
   renderPlayers(state.players);
   updateStartBtn();
   subscribeRoom();
+  // Push shareable URL so anyone opening it lands on the join screen
+  history.replaceState(null, '', '?room=' + state.roomCode);
 }
 
 function renderPlayers(players) {
@@ -1017,9 +1101,10 @@ el('btn-start').addEventListener('click', async () => {
 });
 
 el('btn-copy-code').addEventListener('click', () => {
-  navigator.clipboard.writeText(state.roomCode).catch(() => {});
-  el('btn-copy-code').textContent = '✓ Copied!';
-  setTimeout(() => { el('btn-copy-code').textContent = '📋 Copy Code'; }, 2000);
+  const link = location.origin + location.pathname + '?room=' + state.roomCode;
+  navigator.clipboard.writeText(link).catch(() => {});
+  el('btn-copy-code').textContent = '✓ Link Copied!';
+  setTimeout(() => { el('btn-copy-code').textContent = '📋 Copy Invite Link'; }, 2500);
 });
 
 // ══════════════════════════════════════════════════════

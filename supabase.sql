@@ -30,3 +30,7 @@ create index if not exists idx_game_steps_step_number on game_steps(room_id, ste
 -- Disable RLS for simplicity (enable and add policies for production)
 alter table rooms disable row level security;
 alter table game_steps disable row level security;
+
+-- Enable Realtime for both tables (required for postgres_changes subscriptions)
+alter publication supabase_realtime add table rooms;
+alter publication supabase_realtime add table game_steps;
