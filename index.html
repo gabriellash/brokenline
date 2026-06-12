@@ -1213,22 +1213,35 @@ async function showDrawingScreen(prompt) {
   startSpinner();
   sfxWhoosh();
 
-  const url = imageUrl(prompt);
-  state.currentImageUrl = url;
   const img = el('drawing-img');
+  let attempts = 0;
 
-  img.onload = () => {
-    stopSpinner();
-    el('drawing-spinner').style.display = 'none';
-    el('drawing-result').style.display = 'block';
-    advanceRoomStep();
-  };
-  img.onerror = () => {
-    stopSpinner();
-    el('spinner-msg').textContent = 'Image failed — skipping…';
-    setTimeout(() => advanceRoomStep(), 1500);
-  };
-  img.src = url;
+  function tryLoad() {
+    attempts++;
+    const url = imageUrl(prompt); // new seed each attempt
+    state.currentImageUrl = url;
+
+    img.onload = () => {
+      stopSpinner();
+      el('drawing-spinner').style.display = 'none';
+      el('drawing-result').style.display = 'block';
+      advanceRoomStep();
+    };
+    img.onerror = () => {
+      if (attempts < 4) {
+        el('spinner-msg').textContent = `Attempt ${attempts} failed, retrying…`;
+        setTimeout(tryLoad, 1500);
+      } else {
+        // After 4 tries give up and move on
+        stopSpinner();
+        el('spinner-msg').textContent = 'AI ghosted us — moving on…';
+        setTimeout(() => advanceRoomStep(), 1500);
+      }
+    };
+    img.src = url;
+  }
+
+  tryLoad();
 }
 
 async function advanceRoomStep() {
